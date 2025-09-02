@@ -6,9 +6,9 @@ import { Database, Search, TrendingUp, RefreshCw } from "lucide-react";
 import DataItemCard from "@/components/DataItemCard";
 import SearchFilters from "@/components/SearchFilters";
 import PaginationControls from "@/components/PaginationControls";
-import { mockData, generateMoreMockData } from "@/data/mockData";
-import { DataItem, SearchFilters as SearchFiltersType, PaginationInfo } from "@/types/api";
+import { DataItem, SearchFilters as SearchFiltersType, PaginationInfo, ApiResponse } from "@/types/api";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 const Index = () => {
   const { toast } = useToast();
@@ -23,93 +23,153 @@ const Index = () => {
     total_pages: 0
   });
 
-  // Initialize with mock data
+  // Load data from API
   useEffect(() => {
-    const allMockData = [...mockData, ...generateMoreMockData(40)];
-    setItems(allMockData);
-    applyFiltersAndPagination(allMockData, filters, 1, pagination.per_page);
+    loadData();
   }, []);
 
-  const applyFiltersAndPagination = (
-    data: DataItem[], 
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const response = await supabase.functions.invoke('items', {
+        body: {
+          page: pagination.page,
+          per_page: pagination.per_page,
+          ...filters
+        }
+      });
+
+      if (response.error) {
+        console.error('Error loading data:', response.error);
+        toast({
+          title: "Error loading data",
+          description: "Failed to fetch data from the API",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const apiResponse = response.data as ApiResponse<DataItem>;
+      setItems(apiResponse.data);
+      setFilteredItems(apiResponse.data);
+      setPagination(apiResponse.pagination);
+      
+    } catch (error) {
+      console.error('Error loading data:', error);
+      toast({
+        title: "Error loading data",
+        description: "Failed to fetch data from the API",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchDataWithFilters = async (
     currentFilters: SearchFiltersType, 
     page: number, 
     perPage: number
   ) => {
-    let filtered = [...data];
+    setLoading(true);
+    try {
+      const params: any = {
+        page,
+        per_page: perPage
+      };
 
-    // Apply search query filter
-    if (currentFilters.query) {
-      const query = currentFilters.query.toLowerCase();
-      filtered = filtered.filter(item => 
-        item.title.toLowerCase().includes(query) ||
-        item.description.toLowerCase().includes(query) ||
-        item.author.toLowerCase().includes(query) ||
-        item.tags.some(tag => tag.toLowerCase().includes(query))
-      );
+      if (currentFilters.query) params.q = currentFilters.query;
+      if (currentFilters.source) params.source = currentFilters.source;
+      if (currentFilters.data_type) params.data_type = currentFilters.data_type;
+
+      const response = await supabase.functions.invoke('items', {
+        body: params
+      });
+
+      if (response.error) {
+        console.error('Error fetching data:', response.error);
+        toast({
+          title: "Error filtering data",
+          description: "Failed to fetch filtered data from the API",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const apiResponse = response.data as ApiResponse<DataItem>;
+      setFilteredItems(apiResponse.data);
+      setPagination(apiResponse.pagination);
+      
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      toast({
+        title: "Error filtering data",
+        description: "Failed to fetch filtered data from the API",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
     }
-
-    // Apply source filter
-    if (currentFilters.source) {
-      filtered = filtered.filter(item => item.source === currentFilters.source);
-    }
-
-    // Apply data type filter
-    if (currentFilters.data_type) {
-      filtered = filtered.filter(item => item.data_type === currentFilters.data_type);
-    }
-
-    // Calculate pagination
-    const total = filtered.length;
-    const totalPages = Math.ceil(total / perPage);
-    const startIndex = (page - 1) * perPage;
-    const endIndex = startIndex + perPage;
-    const paginatedItems = filtered.slice(startIndex, endIndex);
-
-    setFilteredItems(paginatedItems);
-    setPagination({
-      page,
-      per_page: perPage,
-      total,
-      total_pages: totalPages
-    });
   };
 
   const handleFiltersChange = (newFilters: SearchFiltersType) => {
     setFilters(newFilters);
-    applyFiltersAndPagination(items, newFilters, 1, pagination.per_page);
+    fetchDataWithFilters(newFilters, 1, pagination.per_page);
   };
 
   const handlePageChange = (page: number) => {
-    applyFiltersAndPagination(items, filters, page, pagination.per_page);
+    fetchDataWithFilters(filters, page, pagination.per_page);
   };
 
   const handlePerPageChange = (perPage: number) => {
-    applyFiltersAndPagination(items, filters, 1, perPage);
+    fetchDataWithFilters(filters, 1, perPage);
   };
 
   const handleRefresh = async () => {
     setLoading(true);
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      // Trigger data collection
+      const collectResponse = await supabase.functions.invoke('collect-data');
+      
+      if (collectResponse.error) {
+        console.error('Error collecting data:', collectResponse.error);
+        toast({
+          title: "Error refreshing data",
+          description: "Failed to collect new data from external APIs",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Reload the current view
+      await fetchDataWithFilters(filters, pagination.page, pagination.per_page);
+      
       toast({
         title: "Data refreshed",
-        description: "Successfully fetched latest data from APIs"
+        description: "Successfully collected and refreshed data from external APIs"
       });
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      toast({
+        title: "Error refreshing data",
+        description: "Failed to refresh data",
+        variant: "destructive"
+      });
+    } finally {
       setLoading(false);
-    }, 1500);
+    }
   };
 
   const getStats = () => {
-    const sources = items.reduce((acc, item) => {
+    const sources = filteredItems.reduce((acc, item) => {
       acc[item.source] = (acc[item.source] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
     return {
-      total: items.length,
+      total: pagination.total,
       sources,
-      latest: items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+      latest: filteredItems.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
     };
   };
 
@@ -264,7 +324,7 @@ const Index = () => {
               </div>
             </div>
             <p className="text-sm text-muted-foreground">
-              Connect to Supabase to enable live data collection from Reddit, GitHub, and other sources.
+              Live data collection from Reddit and GitHub APIs. Click "Refresh Data" to collect the latest content.
             </p>
           </CardContent>
         </Card>
