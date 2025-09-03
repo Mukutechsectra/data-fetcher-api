@@ -220,7 +220,7 @@ const Index = () => {
                 className="gap-2"
               >
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                {loading ? 'Refreshing...' : 'Refresh Data'}
+                {loading ? 'Refreshing...' : 'Collect Fresh Data'}
               </Button>
             </div>
           </div>
