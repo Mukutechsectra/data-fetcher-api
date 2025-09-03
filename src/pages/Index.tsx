@@ -8,7 +8,9 @@ import SearchFilters from "@/components/SearchFilters";
 import PaginationControls from "@/components/PaginationControls";
 import { DataItem, SearchFilters as SearchFiltersType, PaginationInfo, ApiResponse } from "@/types/api";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+
+const SUPABASE_URL = "https://qaakzgwwmmnmzochvult.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFhYWt6Z3d3bW1ubXpvY2h2dWx0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY3Nzc1NzYsImV4cCI6MjA3MjM1MzU3Nn0.FfBrpovY3ZQFCVrC0Qbv-hQc0B_TryWHNK7nZ6eo-iQ";
 
 const Index = () => {
   const { toast } = useToast();
@@ -23,33 +25,51 @@ const Index = () => {
     total_pages: 0
   });
 
-  // Load data from API
+  // Load data from API and set up real-time updates
   useEffect(() => {
     loadData();
+    
+    // Set up real-time data collection every 5 minutes
+    const collectInterval = setInterval(async () => {
+      try {
+        await fetch(`${SUPABASE_URL}/functions/v1/collect-data`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        // Reload current view after collection
+        await fetchDataWithFilters(filters, pagination.page, pagination.per_page);
+      } catch (error) {
+        console.error('Background data collection failed:', error);
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(collectInterval);
   }, []);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const response = await supabase.functions.invoke('items', {
-        body: {
-          page: pagination.page,
-          per_page: pagination.per_page,
-          ...filters
+      // Build query parameters for GET request
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        per_page: pagination.per_page.toString()
+      });
+
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/items?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json'
         }
       });
 
-      if (response.error) {
-        console.error('Error loading data:', response.error);
-        toast({
-          title: "Error loading data",
-          description: "Failed to fetch data from the API",
-          variant: "destructive"
-        });
-        return;
+      if (!response.ok) {
+        throw new Error('Failed to fetch data');
       }
 
-      const apiResponse = response.data as ApiResponse<DataItem>;
+      const apiResponse = await response.json() as ApiResponse<DataItem>;
       setItems(apiResponse.data);
       setFilteredItems(apiResponse.data);
       setPagination(apiResponse.pagination);
@@ -73,30 +93,28 @@ const Index = () => {
   ) => {
     setLoading(true);
     try {
-      const params: any = {
-        page,
-        per_page: perPage
-      };
-
-      if (currentFilters.query) params.q = currentFilters.query;
-      if (currentFilters.source) params.source = currentFilters.source;
-      if (currentFilters.data_type) params.data_type = currentFilters.data_type;
-
-      const response = await supabase.functions.invoke('items', {
-        body: params
+      // Build query parameters for GET request
+      const params = new URLSearchParams({
+        page: page.toString(),
+        per_page: perPage.toString()
       });
 
-      if (response.error) {
-        console.error('Error fetching data:', response.error);
-        toast({
-          title: "Error filtering data",
-          description: "Failed to fetch filtered data from the API",
-          variant: "destructive"
-        });
-        return;
+      if (currentFilters.query) params.set('q', currentFilters.query);
+      if (currentFilters.source) params.set('source', currentFilters.source);
+      if (currentFilters.data_type) params.set('data_type', currentFilters.data_type);
+
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/items?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch filtered data');
       }
 
-      const apiResponse = response.data as ApiResponse<DataItem>;
+      const apiResponse = await response.json() as ApiResponse<DataItem>;
       setFilteredItems(apiResponse.data);
       setPagination(apiResponse.pagination);
       
@@ -129,16 +147,16 @@ const Index = () => {
     setLoading(true);
     try {
       // Trigger data collection
-      const collectResponse = await supabase.functions.invoke('collect-data');
-      
-      if (collectResponse.error) {
-        console.error('Error collecting data:', collectResponse.error);
-        toast({
-          title: "Error refreshing data",
-          description: "Failed to collect new data from external APIs",
-          variant: "destructive"
-        });
-        return;
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/collect-data`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to collect data');
       }
 
       // Reload the current view
@@ -191,14 +209,20 @@ const Index = () => {
               </p>
             </div>
             
-            <Button 
-              onClick={handleRefresh} 
-              disabled={loading}
-              className="gap-2"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              {loading ? 'Refreshing...' : 'Refresh Data'}
-            </Button>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+                Real-time updates active
+              </div>
+              <Button 
+                onClick={handleRefresh} 
+                disabled={loading}
+                className="gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                {loading ? 'Refreshing...' : 'Refresh Data'}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -324,7 +348,7 @@ const Index = () => {
               </div>
             </div>
             <p className="text-sm text-muted-foreground">
-              Live data collection from Reddit and GitHub APIs. Click "Refresh Data" to collect the latest content.
+              Live data collection from Reddit and GitHub APIs. Data refreshes automatically every 5 minutes. Click "Refresh Data" to collect the latest content.
             </p>
           </CardContent>
         </Card>
