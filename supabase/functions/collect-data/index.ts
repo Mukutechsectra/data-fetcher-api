@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
           .select('id')
           .eq('external_id', item.external_id)
           .eq('source', item.source)
-          .single();
+          .maybeSingle();
 
         if (!existing) {
           const { error } = await supabaseClient
@@ -108,7 +108,10 @@ Deno.serve(async (req) => {
             console.error('Error inserting item:', error);
           } else {
             insertedCount++;
+            console.log(`Inserted new ${item.source} item: ${item.title}`);
           }
+        } else {
+          console.log(`Skipped duplicate ${item.source} item: ${item.title}`);
         }
       } catch (error) {
         console.error('Error checking/inserting item:', error);
