@@ -82,7 +82,6 @@ const SearchFilters = ({ onFiltersChange, activeFilters }: SearchFiltersProps) =
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Sources</SelectItem>
-            <SelectItem value="reddit">Reddit</SelectItem>
             <SelectItem value="github">GitHub</SelectItem>
             <SelectItem value="other">Other</SelectItem>
           </SelectContent>

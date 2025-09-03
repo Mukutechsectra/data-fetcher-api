@@ -8,7 +8,7 @@ const corsHeaders = {
 interface DataItem {
   title: string;
   description: string;
-  source: 'reddit' | 'github' | 'other';
+  source: 'github' | 'other';
   author: string;
   created_at: string;
   url: string;

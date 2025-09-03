@@ -2,7 +2,7 @@ export interface DataItem {
   id: string;
   title: string;
   description: string;
-  source: 'reddit' | 'github' | 'other';
+  source: 'github' | 'other';
   author: string;
   created_at: string;
   url: string;
@@ -25,6 +25,6 @@ export interface ApiResponse<T> {
 
 export interface SearchFilters {
   query?: string;
-  source?: 'reddit' | 'github' | 'other' | 'all';
+  source?: 'github' | 'other' | 'all';
   data_type?: string;
 }
